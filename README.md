@@ -15,7 +15,15 @@ macOS menu bar app that monitors your [Claude](https://claude.ai) API usage in r
 - Swift 5.9+
 - Active Claude Pro/Team subscription
 
-## Build & Run
+## Install
+
+```bash
+./scripts/install.sh
+```
+
+This builds the app, creates `cc-usage.app` in `/Applications`, and launches it.
+
+## Development
 
 ```bash
 swift build
