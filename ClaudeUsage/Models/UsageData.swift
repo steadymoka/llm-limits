@@ -29,7 +29,12 @@ struct UsageMetric: Codable, Equatable {
 
     var resetsAtDate: Date? {
         guard let resetsAt else { return nil }
-        return ISO8601DateFormatter().date(from: resetsAt)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: resetsAt) { return date }
+        // fractional seconds 없는 포맷 fallback
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: resetsAt)
     }
 
     var resetsAtRelative: String {
@@ -37,5 +42,20 @@ struct UsageMetric: Codable, Equatable {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
         return formatter.localizedString(for: date, relativeTo: .now)
+    }
+
+    var resetsAtFormatted: String {
+        guard let date = resetsAtDate else { return "" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            formatter.dateFormat = "오늘 a h:mm"
+        } else if calendar.isDateInTomorrow(date) {
+            formatter.dateFormat = "'내일' a h:mm"
+        } else {
+            formatter.dateFormat = "M/d a h:mm"
+        }
+        return formatter.string(from: date)
     }
 }

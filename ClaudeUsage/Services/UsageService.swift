@@ -10,18 +10,53 @@ final class UsageService: ObservableObject {
     private var timer: Timer?
     private let refreshInterval: TimeInterval = 300
 
+    private var _sessionCookie: String
+    private var _organizationId: String
+
     var sessionCookie: String {
-        get { KeychainService.load(key: "sessionCookie") ?? "" }
-        set { _ = KeychainService.save(key: "sessionCookie", value: newValue) }
+        get { _sessionCookie }
+        set {
+            _sessionCookie = newValue
+            saveCredentials()
+        }
     }
 
     var organizationId: String {
-        get { KeychainService.load(key: "organizationId") ?? "" }
-        set { _ = KeychainService.save(key: "organizationId", value: newValue) }
+        get { _organizationId }
+        set {
+            _organizationId = newValue
+            saveCredentials()
+        }
     }
 
     var isConfigured: Bool {
-        !sessionCookie.isEmpty && !organizationId.isEmpty
+        !_sessionCookie.isEmpty && !_organizationId.isEmpty
+    }
+
+    private static let credentialsURL: URL = {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("cc-usage")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent(".credentials")
+    }()
+
+    init() {
+        let creds = Self.loadCredentials()
+        _sessionCookie = creds.cookie
+        _organizationId = creds.orgId
+    }
+
+    private func saveCredentials() {
+        let data = "\(_sessionCookie)\n\(_organizationId)"
+        try? data.write(to: Self.credentialsURL, atomically: true, encoding: .utf8)
+    }
+
+    private static func loadCredentials() -> (cookie: String, orgId: String) {
+        guard let raw = try? String(contentsOf: credentialsURL, encoding: .utf8) else {
+            return ("", "")
+        }
+        let parts = raw.split(separator: "\n", maxSplits: 1).map(String.init)
+        return (parts.first ?? "", parts.count > 1 ? parts[1] : "")
     }
 
     func startPolling() {

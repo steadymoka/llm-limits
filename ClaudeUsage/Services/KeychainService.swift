@@ -13,12 +13,16 @@ enum KeychainService {
             kSecAttrAccount as String: key,
         ]
 
-        SecItemDelete(query as CFDictionary)
+        let update: [String: Any] = [kSecValueData as String: data]
+        let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
 
-        var addQuery = query
-        addQuery[kSecValueData as String] = data
+        if status == errSecItemNotFound {
+            var addQuery = query
+            addQuery[kSecValueData as String] = data
+            return SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess
+        }
 
-        return SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess
+        return status == errSecSuccess
     }
 
     static func load(key: String) -> String? {

@@ -2,11 +2,12 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var service: UsageService
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissWindow) private var dismissWindow
 
     @State private var cookieText: String = ""
     @State private var isFetchingOrg = false
     @State private var statusMessage: String?
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -17,10 +18,15 @@ struct SettingsView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 
-            TextEditor(text: $cookieText)
+            TextField("쿠키 값을 붙여넣으세요", text: $cookieText, axis: .vertical)
                 .font(.system(size: 11, design: .monospaced))
-                .frame(height: 80)
-                .border(Color.gray.opacity(0.3))
+                .lineLimit(4...8)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(Color(nsColor: .textBackgroundColor))
+                .cornerRadius(6)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.gray.opacity(0.3)))
+                .focused($isFocused)
 
             if let status = statusMessage {
                 Text(status)
@@ -30,17 +36,26 @@ struct SettingsView: View {
 
             HStack {
                 Spacer()
-                Button("취소") { dismiss() }
+                Button("취소") { closeSettings() }
                 Button("저장") { save() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(cookieText.isEmpty || isFetchingOrg)
             }
         }
         .padding(20)
-        .frame(width: 400)
+        .frame(width: 420)
         .onAppear {
             cookieText = service.sessionCookie
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                NSApp.activate(ignoringOtherApps: true)
+                isFocused = true
+            }
         }
+    }
+
+    private func closeSettings() {
+        NSApp.setActivationPolicy(.accessory)
+        dismissWindow(id: "settings")
     }
 
     private func save() {
@@ -56,7 +71,7 @@ struct SettingsView: View {
                 service.startPolling()
 
                 try? await Task.sleep(for: .seconds(1))
-                dismiss()
+                closeSettings()
             } else {
                 statusMessage = "조직 ID를 가져올 수 없습니다. 쿠키를 확인하세요."
             }

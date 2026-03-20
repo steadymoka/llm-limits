@@ -9,29 +9,39 @@ struct UsageRowView: View {
     }
 
     private var color: Color {
-        if utilization < 50 { return .green }
-        if utilization < 80 { return .yellow }
-        return .red
+        if utilization < 50 { return Color(red: 0.0, green: 0.55, blue: 0.35) }
+        if utilization < 80 { return Color(red: 0.8, green: 0.5, blue: 0.0) }
+        return Color(red: 0.8, green: 0.15, blue: 0.15)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                 Spacer()
                 Text("\(Int(utilization))%")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundStyle(color)
             }
 
-            ProgressView(value: min(utilization, 100), total: 100)
-                .tint(color)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .fill(color.opacity(0.15))
+                        .frame(height: 5)
 
-            if let resetText = metric?.resetsAtRelative, !resetText.isEmpty {
-                Text("리셋: \(resetText)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .fill(color)
+                        .frame(width: geo.size.width * min(utilization, 100) / 100, height: 5)
+                }
+            }
+            .frame(height: 5)
+
+            if let metric, !metric.resetsAtRelative.isEmpty {
+                Text("\(metric.resetsAtFormatted) (\(metric.resetsAtRelative))")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.tertiary)
             }
         }
     }

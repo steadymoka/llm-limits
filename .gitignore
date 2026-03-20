@@ -1,6 +1,18 @@
+# macOS
 .DS_Store
+
+# Swift / Xcode
 .build/
 .swiftpm/
 *.xcodeproj/
 xcuserdata/
 DerivedData/
+
+# App bundle (build artifact)
+*.app/
+
+# Claude Code
+.claude/
+
+# Superpowers plans
+docs/superpowers/
