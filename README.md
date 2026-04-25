@@ -5,7 +5,7 @@ macOS menu bar app that monitors your [Claude](https://claude.ai) API usage in r
 ## Features
 
 - **Menu bar indicator** — Shows current usage percentage with color-coded status
-- **Usage breakdown** — 5-hour session, weekly (all models), weekly (Sonnet)
+- **Usage breakdown** — 5-hour session, weekly (all models), weekly (Sonnet), weekly (Claude Design)
 - **Reset time** — Displays both absolute time and relative countdown
 - **Auto refresh** — Polls every 5 minutes
 

@@ -4,15 +4,18 @@ struct UsageData: Codable, Equatable {
     let fiveHour: UsageMetric?
     let sevenDay: UsageMetric?
     let sevenDaySonnet: UsageMetric?
+    // Claude Design 사용량은 내부적으로 omelette 코드네임으로 노출된다
+    let sevenDayOmelette: UsageMetric?
 
     enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case sevenDaySonnet = "seven_day_sonnet"
+        case sevenDayOmelette = "seven_day_omelette"
     }
 
     var maxUtilization: Double {
-        [fiveHour?.utilization, sevenDay?.utilization, sevenDaySonnet?.utilization]
+        [fiveHour?.utilization, sevenDay?.utilization, sevenDaySonnet?.utilization, sevenDayOmelette?.utilization]
             .compactMap { $0 }
             .max() ?? 0
     }

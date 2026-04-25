@@ -46,22 +46,9 @@ struct UsagePopoverView: View {
             Text("cc-usage")
                 .font(.system(size: 13, weight: .semibold))
             Spacer()
-            Button {
+            RefreshButton(isLoading: service.isLoading) {
                 service.fetchUsage()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(service.isLoading ? 360 : 0))
-                    .animation(
-                        service.isLoading
-                            ? .linear(duration: 1).repeatForever(autoreverses: false)
-                            : .default,
-                        value: service.isLoading
-                    )
             }
-            .buttonStyle(.plain)
-            .disabled(service.isLoading)
         }
     }
 
@@ -100,6 +87,9 @@ struct UsagePopoverView: View {
             if let sonnet = usage.sevenDaySonnet {
                 UsageRowView(title: "주간 (Sonnet)", metric: sonnet)
             }
+            if let design = usage.sevenDayOmelette {
+                UsageRowView(title: "주간 (Claude Design)", metric: design)
+            }
         }
     }
 
@@ -129,5 +119,40 @@ struct UsagePopoverView: View {
             openWindow(id: "settings")
         }
         NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+private struct RefreshButton: View {
+    let isLoading: Bool
+    let action: () -> Void
+
+    @State private var rotation: Double = 0
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(rotation))
+                .frame(width: 14, height: 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoading)
+        .onChange(of: isLoading, initial: true) { _, loading in
+            if loading {
+                rotation = 0
+                withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                    rotation = 360
+                }
+            } else {
+                // .repeatForever 애니메이션을 깨끗하게 종료시키기 위해 명시적으로 transaction 비활성화
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) {
+                    rotation = 0
+                }
+            }
+        }
     }
 }
