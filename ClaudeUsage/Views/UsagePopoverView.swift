@@ -139,19 +139,18 @@ private struct RefreshButton: View {
         }
         .buttonStyle(.plain)
         .disabled(isLoading)
-        .onChange(of: isLoading, initial: true) { _, loading in
-            if loading {
-                rotation = 0
-                withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
-                    rotation = 360
-                }
-            } else {
-                // .repeatForever 애니메이션을 깨끗하게 종료시키기 위해 명시적으로 transaction 비활성화
+        .task(id: isLoading) {
+            guard isLoading else {
                 var t = Transaction()
                 t.disablesAnimations = true
-                withTransaction(t) {
-                    rotation = 0
+                withTransaction(t) { rotation = 0 }
+                return
+            }
+            while !Task.isCancelled {
+                withAnimation(.linear(duration: 1)) {
+                    rotation += 360
                 }
+                try? await Task.sleep(for: .seconds(1))
             }
         }
     }
