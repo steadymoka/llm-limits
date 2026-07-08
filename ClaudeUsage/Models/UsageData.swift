@@ -6,18 +6,56 @@ struct UsageData: Codable, Equatable {
     let sevenDaySonnet: UsageMetric?
     // Claude Design 사용량은 내부적으로 omelette 코드네임으로 노출된다
     let sevenDayOmelette: UsageMetric?
+    // 모델별 주간 한도(Fable 등)는 limits 배열의 weekly_scoped 항목으로 내려온다
+    let limits: [UsageLimit]?
 
     enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case sevenDaySonnet = "seven_day_sonnet"
         case sevenDayOmelette = "seven_day_omelette"
+        case limits
+    }
+
+    var modelScopedWeeklyLimits: [UsageLimit] {
+        (limits ?? []).filter { $0.kind == "weekly_scoped" && $0.scope?.model?.displayName != nil }
     }
 
     var maxUtilization: Double {
-        [fiveHour?.utilization, sevenDay?.utilization, sevenDaySonnet?.utilization, sevenDayOmelette?.utilization]
+        let metrics = [fiveHour?.utilization, sevenDay?.utilization, sevenDaySonnet?.utilization, sevenDayOmelette?.utilization]
             .compactMap { $0 }
-            .max() ?? 0
+        let scoped = modelScopedWeeklyLimits.map(\.percent)
+        return (metrics + scoped).max() ?? 0
+    }
+}
+
+struct UsageLimit: Codable, Equatable, Hashable {
+    let kind: String
+    let percent: Double
+    let resetsAt: String?
+    let scope: LimitScope?
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case percent
+        case resetsAt = "resets_at"
+        case scope
+    }
+
+    var asMetric: UsageMetric {
+        UsageMetric(utilization: percent, resetsAt: resetsAt)
+    }
+}
+
+struct LimitScope: Codable, Equatable, Hashable {
+    let model: LimitScopeModel?
+}
+
+struct LimitScopeModel: Codable, Equatable, Hashable {
+    let displayName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
     }
 }
 

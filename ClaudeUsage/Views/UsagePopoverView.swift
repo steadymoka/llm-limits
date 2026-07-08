@@ -90,6 +90,12 @@ struct UsagePopoverView: View {
             if let design = usage.sevenDayOmelette {
                 UsageRowView(title: "주간 (Claude Design)", metric: design)
             }
+            ForEach(usage.modelScopedWeeklyLimits, id: \.self) { limit in
+                UsageRowView(
+                    title: "주간 (\(limit.scope?.model?.displayName ?? "모델"))",
+                    metric: limit.asMetric
+                )
+            }
         }
     }
 
