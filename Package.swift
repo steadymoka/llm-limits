@@ -2,13 +2,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClaudeUsage",
+    name: "LLMLimits",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "ClaudeUsage",
+            name: "LLMLimits",
             path: "ClaudeUsage",
             exclude: ["Info.plist"]
-        )
+        ),
+        .testTarget(
+            name: "LLMLimitsTests",
+            dependencies: ["LLMLimits"]
+        ),
     ]
 )

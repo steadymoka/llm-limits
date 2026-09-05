@@ -1,19 +1,23 @@
-# cc-usage
+# LLM Limits
 
-macOS menu bar app that monitors your [Claude](https://claude.ai) API usage in real-time.
+A compact macOS menu bar app for monitoring Claude and Codex usage limits in one place.
 
 ## Features
 
-- **Menu bar indicator** — Shows current usage percentage with color-coded status
-- **Usage breakdown** — 5-hour session, weekly (all models), weekly (Sonnet), weekly (Claude Design)
-- **Reset time** — Displays both absolute time and relative countdown
-- **Auto refresh** — Polls every 5 minutes
+- **Claude + Codex** — Shows every available limit in separate, recognizable provider sections
+- **Automatic Codex detection** — Reuses the signed-in Codex CLI through its local app server; no token copy/paste
+- **Menu bar indicator** — Shows the highest current short-term usage with color-coded status
+- **Reset time** — Displays both absolute reset time and a relative countdown
+- **Model-scoped limits** — Includes Claude model limits and Codex model-specific buckets when available
+- **Auto refresh** — Syncs every 5 minutes
 
 ## Requirements
 
 - macOS 14.0+
 - Swift 5.9+
-- Active Claude Pro/Team subscription
+- One or both of:
+  - An active Claude subscription
+  - A current [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) signed in with ChatGPT
 
 ## Install
 
@@ -21,16 +25,16 @@ macOS menu bar app that monitors your [Claude](https://claude.ai) API usage in r
 ./scripts/install.sh
 ```
 
-This builds the app, creates `cc-usage.app` in `/Applications`, and launches it.
+This builds the app, creates `LLM Limits.app` in `/Applications`, and launches it.
 
 ## Development
 
 ```bash
 swift build
-swift run
+swift run LLMLimits
 ```
 
-Or open with Xcode:
+Or open the package with Xcode:
 
 ```bash
 open Package.swift
@@ -38,34 +42,47 @@ open Package.swift
 
 ## Setup
 
-1. Launch the app (appears in menu bar)
-2. Click the sparkle icon → Settings
-3. Paste your session cookie:
-   - Open [claude.ai](https://claude.ai) in browser
-   - Open DevTools (F12) → Network tab
-   - Click any request to claude.ai
-   - Copy the `Cookie` header value
-4. Click Save — the org ID is fetched automatically
+### Codex
 
-## How It Works
+No app configuration is needed. Install the Codex CLI and sign in:
 
-The app reads usage data from `claude.ai/api/organizations/{orgId}/usage` using your session cookie. Credentials are stored locally in `~/Library/Application Support/cc-usage/`.
-
-## Project Structure
-
+```bash
+codex login
 ```
+
+LLM Limits detects the executable and asks its local app server for the same rate-limit snapshot shown by Codex `/status`. API-key billing does not expose the ChatGPT subscription limit view.
+
+### Claude
+
+1. Launch LLM Limits from the menu bar.
+2. Open Settings.
+3. In your browser, open `claude.ai`, then DevTools → Network.
+4. Select a `claude.ai` request and copy its `Cookie` request header.
+5. Paste it into Settings and save. The organization ID is resolved automatically.
+
+## Data and credentials
+
+- Claude usage is read from `claude.ai/api/organizations/{orgId}/usage`.
+- Claude credentials stay in `~/Library/Application Support/llm-limits/`.
+- Existing credentials from `~/Library/Application Support/cc-usage/` are migrated automatically.
+- Codex credentials are never copied into LLM Limits; the installed Codex process handles its own cached login.
+
+## Project structure
+
+```text
 ClaudeUsage/
-├── ClaudeUsageApp.swift          # App entry, MenuBarExtra
+├── ClaudeUsageApp.swift
 ├── Models/
-│   └── UsageData.swift           # API response models
+│   ├── CodexUsageData.swift
+│   └── UsageData.swift
 ├── Services/
-│   ├── KeychainService.swift     # Keychain helper (legacy)
-│   └── UsageService.swift        # API client, polling, storage
+│   ├── CodexUsageClient.swift
+│   ├── KeychainService.swift
+│   └── UsageService.swift
 └── Views/
-    ├── SettingsView.swift         # Cookie input window
-    ├── UsagePopoverView.swift     # Main popover UI
-    └── Components/
-        └── UsageRowView.swift     # Usage metric row
+    ├── Components/UsageRowView.swift
+    ├── SettingsView.swift
+    └── UsagePopoverView.swift
 ```
 
 ## License

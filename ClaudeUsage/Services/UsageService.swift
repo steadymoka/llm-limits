@@ -4,8 +4,13 @@ import SwiftUI
 @MainActor
 final class UsageService: ObservableObject {
     @Published var usage: UsageData?
-    @Published var isLoading = false
     @Published var error: String?
+    @Published private(set) var codexUsage: CodexUsageData?
+    @Published private(set) var codexError: String?
+    @Published private(set) var isClaudeLoading = false
+    @Published private(set) var isCodexLoading = false
+    @Published private(set) var isCodexInstalled = false
+    @Published private(set) var hasCheckedCodex = false
 
     private var timer: Timer?
     private let refreshInterval: TimeInterval = 300
@@ -33,11 +38,30 @@ final class UsageService: ObservableObject {
         !_sessionCookie.isEmpty && !_organizationId.isEmpty
     }
 
+    var isLoading: Bool {
+        isClaudeLoading || isCodexLoading
+    }
+
+    var menuBarUtilization: Double? {
+        [usage?.fiveHour?.utilization, codexUsage?.representativeUtilization]
+            .compactMap { $0 }
+            .max()
+    }
+
+    var activeProviderCount: Int {
+        [usage != nil, codexUsage != nil].filter { $0 }.count
+    }
+
     private static let credentialsURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = appSupport.appendingPathComponent("cc-usage")
+        let dir = appSupport.appendingPathComponent("llm-limits")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent(".credentials")
+    }()
+
+    private static let legacyCredentialsURL: URL = {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport.appendingPathComponent("cc-usage/.credentials")
     }()
 
     init() {
@@ -52,8 +76,14 @@ final class UsageService: ObservableObject {
     }
 
     private static func loadCredentials() -> (cookie: String, orgId: String) {
-        guard let raw = try? String(contentsOf: credentialsURL, encoding: .utf8) else {
+        let sourceURL = FileManager.default.fileExists(atPath: credentialsURL.path)
+            ? credentialsURL
+            : legacyCredentialsURL
+        guard let raw = try? String(contentsOf: sourceURL, encoding: .utf8) else {
             return ("", "")
+        }
+        if sourceURL == legacyCredentialsURL {
+            try? raw.write(to: credentialsURL, atomically: true, encoding: .utf8)
         }
         let parts = raw.split(separator: "\n", maxSplits: 1).map(String.init)
         return (parts.first ?? "", parts.count > 1 ? parts[1] : "")
@@ -75,18 +105,26 @@ final class UsageService: ObservableObject {
     }
 
     func fetchUsage() {
+        fetchClaudeUsage()
+        fetchCodexUsage()
+    }
+
+    private func fetchClaudeUsage() {
         guard isConfigured else {
-            error = "쿠키 또는 조직 ID가 설정되지 않았습니다"
+            usage = nil
+            error = nil
+            isClaudeLoading = false
             return
         }
+        guard !isClaudeLoading else { return }
 
-        isLoading = true
+        isClaudeLoading = true
         error = nil
 
         let urlString = "https://claude.ai/api/organizations/\(organizationId)/usage"
         guard let url = URL(string: urlString) else {
             error = "잘못된 URL"
-            isLoading = false
+            isClaudeLoading = false
             return
         }
 
@@ -107,23 +145,50 @@ final class UsageService: ObservableObject {
 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     self.error = "응답 오류"
-                    self.isLoading = false
+                    self.isClaudeLoading = false
                     return
                 }
 
                 guard httpResponse.statusCode == 200 else {
                     self.error = "HTTP \(httpResponse.statusCode) - 쿠키가 만료되었을 수 있습니다"
-                    self.isLoading = false
+                    self.isClaudeLoading = false
                     return
                 }
 
                 let decoded = try JSONDecoder().decode(UsageData.self, from: data)
                 self.usage = decoded
-                self.isLoading = false
+                self.isClaudeLoading = false
             } catch {
                 self.error = error.localizedDescription
-                self.isLoading = false
+                self.isClaudeLoading = false
             }
+        }
+    }
+
+    private func fetchCodexUsage() {
+        guard !isCodexLoading else { return }
+        guard let executableURL = CodexUsageClient.executableURL() else {
+            isCodexInstalled = false
+            hasCheckedCodex = true
+            codexUsage = nil
+            codexError = nil
+            return
+        }
+
+        isCodexInstalled = true
+        isCodexLoading = true
+        codexError = nil
+
+        Task {
+            do {
+                codexUsage = try await CodexUsageClient.fetchUsage(using: executableURL)
+            } catch is CancellationError {
+                // A later refresh or app shutdown can cancel this request.
+            } catch {
+                codexError = error.localizedDescription
+            }
+            isCodexLoading = false
+            hasCheckedCodex = true
         }
     }
 
