@@ -42,10 +42,14 @@ final class UsageService: ObservableObject {
         isClaudeLoading || isCodexLoading
     }
 
-    var menuBarUtilization: Double? {
-        [usage?.fiveHour?.utilization, codexUsage?.representativeUtilization]
-            .compactMap { $0 }
-            .max()
+    var claudeMenuBarUtilization: Double? {
+        guard isConfigured, error == nil else { return nil }
+        return usage?.fiveHour?.utilization ?? usage?.sevenDay?.utilization
+    }
+
+    var codexMenuBarUtilization: Double? {
+        guard codexError == nil else { return nil }
+        return codexUsage?.representativeUtilization
     }
 
     var activeProviderCount: Int {

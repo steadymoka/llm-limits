@@ -38,13 +38,6 @@ struct UsagePopoverView: View {
             Text("LLM Limits")
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
 
-            Text("LOCAL")
-                .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(.secondary.opacity(0.1), in: Capsule())
-
             Spacer(minLength: 8)
 
             RefreshButton(isLoading: service.isLoading) {

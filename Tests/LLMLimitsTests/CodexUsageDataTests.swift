@@ -25,7 +25,7 @@ final class CodexUsageDataTests: XCTestCase {
         XCTAssertEqual(usage.representativeUtilization, 23)
     }
 
-    func testDecodesDefaultAndModelSpecificLimitsWithoutDuplicates() throws {
+    func testDisplaysOnlyDefaultLimitsAndExcludesSparkFromMenuBar() throws {
         let json = #"""
         {
           "rateLimits": {
@@ -85,10 +85,10 @@ final class CodexUsageDataTests: XCTestCase {
 
         XCTAssertEqual(
             usage.displayLimits.map(\.title),
-            ["주간", "GPT-5.3-Codex-Spark · 5시간 세션", "GPT-5.3-Codex-Spark · 주간"]
+            ["주간"]
         )
-        XCTAssertEqual(usage.displayLimits.map(\.metric.utilization), [42, 18, 7])
-        XCTAssertEqual(usage.representativeUtilization, 18)
+        XCTAssertEqual(usage.displayLimits.map(\.metric.utilization), [42])
+        XCTAssertEqual(usage.representativeUtilization, 42)
         XCTAssertEqual(usage.maxUtilization, 42)
         XCTAssertEqual(usage.planLabel, "PLUS")
     }

@@ -51,20 +51,6 @@ struct CodexUsageData: Decodable, Equatable {
         let defaultId = rateLimits.limitId ?? "codex"
         result.append((defaultId, rateLimits.limitName, rateLimits))
 
-        let additional = (rateLimitsByLimitId ?? [:])
-            .sorted { lhs, rhs in
-                let lhsName = lhs.value.limitName ?? lhs.key
-                let rhsName = rhs.value.limitName ?? rhs.key
-                return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
-            }
-
-        for (key, snapshot) in additional {
-            let duplicatesDefault = snapshot == rateLimits
-                || (snapshot.limitId != nil && snapshot.limitId == rateLimits.limitId)
-            guard !duplicatesDefault else { continue }
-            result.append((snapshot.limitId ?? key, snapshot.limitName, snapshot))
-        }
-
         return result
     }
 }

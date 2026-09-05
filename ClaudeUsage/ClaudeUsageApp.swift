@@ -23,28 +23,75 @@ struct LLMLimitsApp: App {
 struct MenuBarLabel: View {
     @ObservedObject var service: UsageService
 
-    private var utilization: Double {
-        service.menuBarUtilization ?? 0
+    var body: some View {
+        let content = MenuBarContent(
+            claude: service.claudeMenuBarUtilization,
+            codex: service.codexMenuBarUtilization
+        )
+        Group {
+            if let image = content.renderImage() {
+                Image(nsImage: image)
+            } else {
+                Text(content.accessibilityText)
+            }
+        }
+        .accessibilityLabel(content.accessibilityText)
+        .help(content.accessibilityText)
+        .onAppear { service.startPolling() }
+    }
+}
+
+// MenuBarExtra bridges its label to an NSStatusItem, not a normal SwiftUI
+// layout. Flatten the whole label so every provider survives that bridge.
+struct MenuBarContent: View {
+    let claude: Double?
+    let codex: Double?
+
+    var accessibilityText: String {
+        let labels = [claude.map { "Claude \(Int($0.rounded()))%" },
+         codex.map { "Codex \(Int($0.rounded()))%" }]
+            .compactMap { $0 }.joined(separator: " / ")
+        return labels.isEmpty ? "LLM Limits" : labels
     }
 
-    private var color: Color {
-        guard service.menuBarUtilization != nil else { return .gray }
-        if utilization < 50 { return Color(red: 0.0, green: 0.55, blue: 0.35) }
-        if utilization < 80 { return Color(red: 0.8, green: 0.5, blue: 0.0) }
-        return Color(red: 0.8, green: 0.15, blue: 0.15)
+    @MainActor
+    func renderImage() -> NSImage? {
+        let renderer = ImageRenderer(content: self.environment(\.colorScheme, .light))
+        renderer.scale = 3
+        guard let image = renderer.nsImage else { return nil }
+        image.isTemplate = true
+        return image
     }
 
     var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: "terminal.fill")
-            if service.menuBarUtilization != nil {
-                Text("\(Int(utilization.rounded()))%")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+        HStack(spacing: 5) {
+            if let claude {
+                indicator(.claude, utilization: claude)
+            }
+            if claude != nil && codex != nil {
+                Text("/")
+            }
+            if let codex {
+                indicator(.codex, utilization: codex)
+            }
+            if claude == nil && codex == nil {
+                Image(systemName: "terminal.fill")
             }
         }
-        .foregroundStyle(color)
-        .onAppear {
-            service.startPolling()
+        .font(.system(size: 11, weight: .medium, design: .monospaced))
+        .foregroundStyle(.black)
+        .frame(height: 18)
+        .fixedSize()
+    }
+
+    private func indicator(_ provider: UsageProvider, utilization: Double) -> some View {
+        HStack(spacing: 3) {
+            if provider == .claude {
+                ProviderMark(provider: provider)
+            } else {
+                Text(">_").font(.system(size: 10, weight: .heavy, design: .monospaced))
+            }
+            Text("\(Int(utilization.rounded()))%")
         }
     }
 }

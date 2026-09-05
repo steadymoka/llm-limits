@@ -6,9 +6,9 @@ A compact macOS menu bar app for monitoring Claude and Codex usage limits in one
 
 - **Claude + Codex** — Shows every available limit in separate, recognizable provider sections
 - **Automatic Codex detection** — Reuses the signed-in Codex CLI through its local app server; no token copy/paste
-- **Menu bar indicator** — Shows the highest current short-term usage with color-coded status
+- **Menu bar indicators** — Shows Claude / Codex usage separately with provider icons; only available providers appear
 - **Reset time** — Displays both absolute reset time and a relative countdown
-- **Model-scoped limits** — Includes Claude model limits and Codex model-specific buckets when available
+- **Usage breakdown** — Includes Claude model limits and the default Codex limits; additional Codex model buckets are hidden
 - **Auto refresh** — Syncs every 5 minutes
 
 ## Requirements
