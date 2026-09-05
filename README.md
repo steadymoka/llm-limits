@@ -1,44 +1,36 @@
 # LLM Limits
 
-A compact macOS menu bar app for monitoring Claude and Codex usage limits in one place.
+A compact macOS menu bar app for tracking Claude and Codex usage limits.
+
+See both providers at a glance, check when limits reset, and get back to work.
+Built with SwiftUI, with a minimal, developer-friendly interface.
 
 ## Features
 
-- **Claude + Codex** — Shows every available limit in separate, recognizable provider sections
-- **Automatic Codex detection** — Reuses the signed-in Codex CLI through its local app server; no token copy/paste
-- **Menu bar indicators** — Shows Claude / Codex usage separately with provider icons; only available providers appear
-- **Reset time** — Displays both absolute reset time and a relative countdown
-- **Usage breakdown** — Includes Claude model limits and the default Codex limits; additional Codex model buckets are hidden
-- **Auto refresh** — Syncs every 5 minutes
+- **Both providers, one menu bar** — Separate Claude / Codex percentages with provider icons. Only providers with available usage data appear.
+- **Detailed limits** — Claude session, weekly, and model-specific limits alongside the default Codex limits. Extra Codex model buckets, such as Spark, stay hidden.
+- **Reset countdowns** — See the reset date and time, plus how long is left.
+- **Automatic Codex detection** — Uses the installed, signed-in Codex CLI without copying tokens into the app.
+- **Automatic refresh** — Updates every 5 minutes, with manual refresh in the popover.
 
 ## Requirements
 
 - macOS 14.0+
-- Swift 5.9+
+- Xcode or Command Line Tools with Swift 5.9+ to build from source
 - One or both of:
   - An active Claude subscription
   - A current [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) signed in with ChatGPT
 
-## Install
+## Quick start
 
 ```bash
+git clone https://github.com/steadymoka/llm-limits.git
+cd llm-limits
 ./scripts/install.sh
 ```
 
-This builds the app, creates `LLM Limits.app` in `/Applications`, and launches it.
-
-## Development
-
-```bash
-swift build
-swift run LLMLimits
-```
-
-Or open the package with Xcode:
-
-```bash
-open Package.swift
-```
+The script builds a release binary, installs `LLM Limits.app` in `/Applications`,
+and launches it. Open its menu bar item to view usage or access settings.
 
 ## Setup
 
@@ -50,7 +42,8 @@ No app configuration is needed. Install the Codex CLI and sign in:
 codex login
 ```
 
-LLM Limits detects the executable and asks its local app server for the same rate-limit snapshot shown by Codex `/status`. API-key billing does not expose the ChatGPT subscription limit view.
+LLM Limits reads rate limits through the CLI's local app server. API-key billing
+does not provide the ChatGPT subscription limits used by this app.
 
 ### Claude
 
@@ -60,12 +53,47 @@ LLM Limits detects the executable and asks its local app server for the same rat
 4. Select a `claude.ai` request and copy its `Cookie` request header.
 5. Paste it into Settings and save. The organization ID is resolved automatically.
 
-## Data and credentials
+Treat the cookie as a password: never share it in screenshots, issues, or commits.
+
+## Update and relaunch
+
+Quit LLM Limits using the power button at the bottom of its popover, then run
+these commands from your local repository:
+
+```bash
+git pull --ff-only
+./scripts/install.sh
+```
+
+The installer replaces the app bundle and launches the updated version. Your
+saved settings remain in Application Support.
+
+## Troubleshooting
+
+- **Only one provider appears:** The menu bar shows successfully fetched usage, not installed apps alone. Check the other provider's section or Settings for a login or fetch error.
+- **Codex is missing:** Ensure the Codex CLI is installed and signed in with ChatGPT, then refresh.
+- **Claude stops updating:** Its session cookie may have expired. Save a fresh cookie in Settings.
+- **Old UI after updating:** Fully quit the running app before reinstalling.
+
+## Privacy and credentials
 
 - Claude usage is read from `claude.ai/api/organizations/{orgId}/usage`.
-- Claude credentials stay in `~/Library/Application Support/llm-limits/`.
+- Claude credentials are stored in a local plaintext file at `~/Library/Application Support/llm-limits/.credentials`, not in macOS Keychain.
 - Existing credentials from `~/Library/Application Support/cc-usage/` are migrated automatically.
 - Codex credentials are never copied into LLM Limits; the installed Codex process handles its own cached login.
+
+Usage requests require network access to the respective providers.
+
+## Development
+
+```bash
+swift build
+swift test
+swift run LLMLimits
+```
+
+You can also open `Package.swift` in Xcode. Quit any installed copy first to avoid
+running two menu bar instances.
 
 ## Project structure
 
@@ -85,6 +113,4 @@ ClaudeUsage/
     └── UsagePopoverView.swift
 ```
 
-## License
-
-MIT
+LLM Limits is an independent project, not affiliated with Anthropic or OpenAI.
