@@ -4,13 +4,14 @@ struct UsagePopoverView: View {
     @ObservedObject var service: UsageService
     @Environment(\.openWindow) private var openWindow
 
-    private var showsClaude: Bool {
-        service.isConfigured || service.usage != nil
-    }
+    /// 계정이 3개 이상일 때만 접기를 쓴다. 여기엔 사용자가 직접 펼친 계정만 담긴다.
+    @State private var manuallyExpanded = Set<String>()
 
-    private var showsCodex: Bool {
-        service.isCodexInstalled || service.codexUsage != nil
-    }
+    /// 리셋 열의 표시 형식. 메뉴바 패널은 key window가 아니라 툴팁이 뜨지 않으므로,
+    /// 절대시각은 숨기지 말고 이 전환으로 화면 안에서 보여준다.
+    @AppStorage("showsAbsoluteReset") private var showsAbsoluteReset = true
+
+    private static let collapseThreshold = 3
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,6 +41,16 @@ struct UsagePopoverView: View {
 
             Spacer(minLength: 8)
 
+            Button { showsAbsoluteReset.toggle() } label: {
+                Image(systemName: showsAbsoluteReset ? "clock" : "clock.arrow.circlepath")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 15, height: 15)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(showsAbsoluteReset ? "남은 시간으로 보기" : "리셋 시각으로 보기")
+
             RefreshButton(isLoading: service.isLoading) {
                 service.fetchUsage()
             }
@@ -48,117 +59,63 @@ struct UsagePopoverView: View {
 
     @ViewBuilder
     private var content: some View {
-        if !showsClaude && !showsCodex && !service.hasCheckedCodex {
-            loadingView
-                .padding(.vertical, 18)
-        } else if !showsClaude && !showsCodex {
-            emptyView
-                .padding(.horizontal, 14)
-                .padding(.vertical, 16)
+        let claude = service.claudeAccounts
+        let codex = service.codexAccounts
+
+        if claude.isEmpty && codex.isEmpty {
+            if service.hasCheckedSources {
+                emptyView
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 16)
+            } else {
+                loadingView
+                    .padding(.vertical, 18)
+            }
         } else {
             VStack(spacing: 0) {
-                if showsClaude {
-                    claudeSection
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
+                if !claude.isEmpty {
+                    providerSection(name: "CLAUDE", provider: .claude, accounts: claude) {
+                        if let notice = orcaNotice {
+                            InlineStatus(message: notice, color: .orange)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
                 }
 
-                if showsClaude && showsCodex {
+                if !claude.isEmpty && !codex.isEmpty {
                     Divider()
                         .padding(.horizontal, 12)
                         .opacity(0.55)
                 }
 
-                if showsCodex {
-                    codexSection
+                if !codex.isEmpty {
+                    providerSection(name: "CODEX", provider: .codex, accounts: codex) { EmptyView() }
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
+                        .padding(.vertical, 7)
                 }
             }
         }
     }
 
-    private var claudeSection: some View {
-        providerSection(
-            name: "CLAUDE",
-            provider: .claude,
-            badge: nil,
-            statusColor: providerStatusColor(dataAvailable: service.usage != nil, error: service.error)
-        ) {
-            if let usage = service.usage {
-                VStack(spacing: 7) {
-                    UsageRowView(title: "5시간 세션", metric: usage.fiveHour)
-                    UsageRowView(title: "주간 · 전체", metric: usage.sevenDay)
-                    if let sonnet = usage.sevenDaySonnet {
-                        UsageRowView(title: "주간 · Sonnet", metric: sonnet)
-                    }
-                    if let design = usage.sevenDayOmelette {
-                        UsageRowView(title: "주간 · Claude Design", metric: design)
-                    }
-                    ForEach(usage.modelScopedWeeklyLimits, id: \.self) { limit in
-                        UsageRowView(
-                            title: "주간 · \(limit.scope?.model?.displayName ?? "모델")",
-                            metric: limit.asMetric
-                        )
-                    }
-                }
-
-                if let error = service.error {
-                    InlineStatus(message: error, color: .red)
-                        .padding(.top, 2)
-                }
-            } else if service.isClaudeLoading {
-                inlineLoading
-            } else if let error = service.error {
-                InlineStatus(message: error, color: .red)
-            }
+    /// Orca를 아예 못 읽어 계정 목록이 비어 있을 때만 알린다.
+    /// 스냅샷이 남아 있으면 계정별 나이 배지가 이미 사정을 말해준다.
+    private var orcaNotice: String? {
+        guard service.orcaSnapshot == nil, case .unavailable(let message) = service.orcaStatus else {
+            return nil
         }
+        return message
     }
 
-    private var codexSection: some View {
-        providerSection(
-            name: "CODEX",
-            provider: .codex,
-            badge: service.codexUsage?.planLabel,
-            statusColor: providerStatusColor(dataAvailable: service.codexUsage != nil, error: service.codexError)
-        ) {
-            if let usage = service.codexUsage {
-                if usage.displayLimits.isEmpty {
-                    HStack(spacing: 5) {
-                        Image(systemName: usage.isUnlimited ? "infinity" : "minus")
-                        Text(usage.isUnlimited ? "UNLIMITED" : "한도 정보 없음")
-                        Spacer()
-                    }
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                } else {
-                    VStack(spacing: 7) {
-                        ForEach(usage.displayLimits) { limit in
-                            UsageRowView(title: limit.title, metric: limit.metric)
-                        }
-                    }
-                }
-
-                if let error = service.codexError {
-                    InlineStatus(message: error, color: .red)
-                        .padding(.top, 2)
-                }
-            } else if service.isCodexLoading {
-                inlineLoading
-            } else if let error = service.codexError {
-                InlineStatus(message: error, color: .red)
-            }
-        }
-    }
-
-    private func providerSection<Content: View>(
+    private func providerSection<Footer: View>(
         name: String,
         provider: UsageProvider,
-        badge: String?,
-        statusColor: Color,
-        @ViewBuilder content: () -> Content
+        accounts: [AccountCard],
+        @ViewBuilder footer: () -> Footer
     ) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        let isCollapsible = accounts.count >= Self.collapseThreshold
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 ProviderMark(provider: provider)
 
@@ -169,25 +126,55 @@ struct UsagePopoverView: View {
 
                 Spacer()
 
-                if let badge {
-                    Text(badge)
+                if accounts.count > 1 {
+                    Text("\(accounts.count) ACCOUNTS")
                         .font(.system(size: 7.5, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.tertiary)
-                        .lineLimit(1)
                 }
 
                 Circle()
-                    .fill(statusColor)
+                    .fill(statusColor(for: accounts))
                     .frame(width: 5, height: 5)
             }
 
-            content()
+            ForEach(Array(accounts.enumerated()), id: \.element.id) { index, card in
+                if index > 0 {
+                    Divider().opacity(0.4)
+                }
+                AccountSectionView(
+                    card: card,
+                    showsActiveBadge: accounts.count > 1,
+                    isExpanded: isExpanded(card, isCollapsible: isCollapsible),
+                    isCollapsible: isCollapsible,
+                    showsAbsoluteReset: showsAbsoluteReset,
+                    onToggleResetFormat: { showsAbsoluteReset.toggle() },
+                    onToggle: { toggle(card) }
+                )
+            }
+
+            footer()
         }
     }
 
-    private func providerStatusColor(dataAvailable: Bool, error: String?) -> Color {
-        if error != nil { return .red }
-        if dataAvailable { return Color(red: 0.1, green: 0.68, blue: 0.43) }
+    private func isExpanded(_ card: AccountCard, isCollapsible: Bool) -> Bool {
+        guard isCollapsible else { return true }
+        return card.isActive || manuallyExpanded.contains(card.key.storageID)
+    }
+
+    private func toggle(_ card: AccountCard) {
+        let id = card.key.storageID
+        if manuallyExpanded.contains(id) {
+            manuallyExpanded.remove(id)
+        } else {
+            manuallyExpanded.insert(id)
+        }
+    }
+
+    private func statusColor(for accounts: [AccountCard]) -> Color {
+        if accounts.contains(where: { !$0.rows.isEmpty }) {
+            return Color(red: 0.1, green: 0.68, blue: 0.43)
+        }
+        if accounts.contains(where: { $0.error != nil }) { return .red }
         return .secondary.opacity(0.55)
     }
 
@@ -195,23 +182,11 @@ struct UsagePopoverView: View {
         HStack(spacing: 7) {
             ProgressView()
                 .controlSize(.mini)
-            Text("로컬 사용량 소스 확인 중")
+            Text("사용량 소스 확인 중")
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private var inlineLoading: some View {
-        HStack(spacing: 6) {
-            ProgressView()
-                .controlSize(.mini)
-            Text("SYNCING")
-                .font(.system(size: 8.5, weight: .medium, design: .monospaced))
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
     }
 
     private var emptyView: some View {
@@ -225,9 +200,10 @@ struct UsagePopoverView: View {
                 .foregroundStyle(.secondary)
                 .tracking(0.8)
 
-            Text("Claude 쿠키를 설정하거나 Codex에 로그인하세요")
+            Text("Orca에 계정을 추가하거나, Claude 쿠키를 설정하거나, Codex에 로그인하세요")
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
 
             Button("OPEN CONFIG") { openSettings() }
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
@@ -269,9 +245,9 @@ struct UsagePopoverView: View {
     }
 
     private var footerStatus: String {
-        let count = service.activeProviderCount
-        let source = count == 1 ? "1 SOURCE" : "\(count) SOURCES"
-        return "\(source) · AUTO 5M"
+        let count = service.activeAccountCount
+        let accounts = count == 1 ? "1 ACCOUNT" : "\(count) ACCOUNTS"
+        return "\(accounts) · AUTO 5M"
     }
 
     private func openSettings() {
@@ -283,11 +259,6 @@ struct UsagePopoverView: View {
         }
         NSApp.activate(ignoringOtherApps: true)
     }
-}
-
-enum UsageProvider {
-    case claude
-    case codex
 }
 
 struct ProviderMark: View {
@@ -333,26 +304,7 @@ private struct CodexMark: View {
     }
 }
 
-private struct InlineStatus: View {
-    let message: String
-    let color: Color
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 5) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 8))
-                .foregroundStyle(color)
-                .padding(.top, 1)
-            Text(message)
-                .font(.system(size: 9.5))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-            Spacer(minLength: 0)
-        }
-    }
-}
-
-private struct RefreshButton: View {
+struct RefreshButton: View {
     let isLoading: Bool
     let action: () -> Void
 

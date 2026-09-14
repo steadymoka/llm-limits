@@ -1,97 +1,124 @@
 import Foundation
 import SwiftUI
 
+enum OrcaStatus: Equatable {
+    case checking
+    case notInstalled
+    case unavailable(String)
+    case ok
+}
+
+enum CookieSaveOutcome: Equatable {
+    case saved(orgId: String)
+    /// 쿠키가 기대한 계정이 아닐 때. 사용자가 실제 계정에 붙일지 결정한다.
+    case mismatch(resolved: String, resolvedLabel: String?)
+    case unresolved
+}
+
 @MainActor
 final class UsageService: ObservableObject {
-    @Published var usage: UsageData?
-    @Published var error: String?
+    @Published private(set) var credentials: [ClaudeCredential]
+    @Published private(set) var cookieStates: [String: AccountRegistry.CookieState] = [:]
+
+    @Published private(set) var orcaSnapshot: OrcaSnapshot?
+    @Published private(set) var orcaStatus: OrcaStatus = .checking
+    @Published private(set) var isOrcaLoading = false
+
     @Published private(set) var codexUsage: CodexUsageData?
     @Published private(set) var codexError: String?
-    @Published private(set) var isClaudeLoading = false
+    @Published private(set) var codexFetchedAt: Date?
     @Published private(set) var isCodexLoading = false
     @Published private(set) var isCodexInstalled = false
     @Published private(set) var hasCheckedCodex = false
 
+    @Published var hiddenMenuBarAccounts: Set<String> {
+        didSet { Self.persistHidden(hiddenMenuBarAccounts) }
+    }
+
     private var timer: Timer?
     private let refreshInterval: TimeInterval = 300
+    private static let hiddenAccountsKey = "hiddenMenuBarAccounts"
 
-    private var _sessionCookie: String
-    private var _organizationId: String
+    convenience init() {
+        self.init(loadsStoredCredentials: true)
+    }
 
-    var sessionCookie: String {
-        get { _sessionCookie }
-        set {
-            _sessionCookie = newValue
-            saveCredentials()
+    /// 저장된 자격증명을 읽지 않는 인스턴스를 만들 수 있어야 한다.
+    /// 렌더 테스트가 사용자의 실제 설정 파일을 읽거나 옮겨 쓰면 안 된다.
+    init(loadsStoredCredentials: Bool) {
+        credentials = loadsStoredCredentials ? CredentialsStore.load() : []
+        hiddenMenuBarAccounts = Set(UserDefaults.standard.stringArray(forKey: Self.hiddenAccountsKey) ?? [])
+        if loadsStoredCredentials {
+            adoptPendingCookie()
         }
     }
 
-    var organizationId: String {
-        get { _organizationId }
-        set {
-            _organizationId = newValue
-            saveCredentials()
-        }
+    /// 조직 id 없이 쿠키만 저장돼 있던 설정은 그대로는 쓸 수 없다.
+    /// 조직 id를 해석해 계정에 붙이고 v2로 옮긴다.
+    private func adoptPendingCookie() {
+        guard credentials.isEmpty, let cookie = CredentialsStore.pendingCookie() else { return }
+        Task { _ = await saveCookie(cookie) }
     }
 
-    var isConfigured: Bool {
-        !_sessionCookie.isEmpty && !_organizationId.isEmpty
+    // MARK: - 표시 모델
+
+    var claudeAccounts: [AccountCard] {
+        AccountRegistry.claudeCards(
+            credentials: credentials,
+            cookieStates: cookieStates,
+            orca: orcaSnapshot
+        )
+    }
+
+    var codexAccounts: [AccountCard] {
+        AccountRegistry.codexCards(
+            usage: codexUsage,
+            error: codexError,
+            fetchedAt: codexFetchedAt,
+            isLoading: isCodexLoading,
+            isInstalled: isCodexInstalled,
+            orcaLabel: orcaSnapshot?.codexSystemDefaultLabel
+        )
+    }
+
+    var menuBarEntries: [MenuBarEntry] {
+        [
+            menuBarEntry(for: .claude, cards: claudeAccounts),
+            menuBarEntry(for: .codex, cards: codexAccounts),
+        ].compactMap { $0 }
     }
 
     var isLoading: Bool {
-        isClaudeLoading || isCodexLoading
+        isOrcaLoading || isCodexLoading || cookieStates.values.contains { $0.isLoading }
     }
 
-    var claudeMenuBarUtilization: Double? {
-        guard isConfigured, error == nil else { return nil }
-        return usage?.fiveHour?.utilization ?? usage?.sevenDay?.utilization
+    /// 아직 어떤 소스도 확인하지 못한 최초 구동 순간.
+    var hasCheckedSources: Bool {
+        hasCheckedCodex && orcaStatus != .checking
     }
 
-    var codexMenuBarUtilization: Double? {
-        guard codexError == nil else { return nil }
-        return codexUsage?.representativeUtilization
+    var activeAccountCount: Int {
+        (claudeAccounts + codexAccounts).filter { !$0.rows.isEmpty }.count
     }
 
-    var activeProviderCount: Int {
-        [usage != nil, codexUsage != nil].filter { $0 }.count
+    private func menuBarEntry(for provider: UsageProvider, cards: [AccountCard]) -> MenuBarEntry? {
+        let accounts = cards
+            .filter { !hiddenMenuBarAccounts.contains($0.key.storageID) }
+            .compactMap { card -> MenuBarAccount? in
+                guard let utilization = card.menuBarUtilization else { return nil }
+                return MenuBarAccount(label: card.shortLabel, percent: Int(utilization.rounded()))
+            }
+        guard !accounts.isEmpty else { return nil }
+
+        let shown = Array(accounts.prefix(MenuBarEntry.inlineLimit))
+        return MenuBarEntry(
+            provider: provider,
+            accounts: shown,
+            overflow: accounts.count - shown.count
+        )
     }
 
-    private static let credentialsURL: URL = {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = appSupport.appendingPathComponent("llm-limits")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent(".credentials")
-    }()
-
-    private static let legacyCredentialsURL: URL = {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("cc-usage/.credentials")
-    }()
-
-    init() {
-        let creds = Self.loadCredentials()
-        _sessionCookie = creds.cookie
-        _organizationId = creds.orgId
-    }
-
-    private func saveCredentials() {
-        let data = "\(_sessionCookie)\n\(_organizationId)"
-        try? data.write(to: Self.credentialsURL, atomically: true, encoding: .utf8)
-    }
-
-    private static func loadCredentials() -> (cookie: String, orgId: String) {
-        let sourceURL = FileManager.default.fileExists(atPath: credentialsURL.path)
-            ? credentialsURL
-            : legacyCredentialsURL
-        guard let raw = try? String(contentsOf: sourceURL, encoding: .utf8) else {
-            return ("", "")
-        }
-        if sourceURL == legacyCredentialsURL {
-            try? raw.write(to: credentialsURL, atomically: true, encoding: .utf8)
-        }
-        let parts = raw.split(separator: "\n", maxSplits: 1).map(String.init)
-        return (parts.first ?? "", parts.count > 1 ? parts[1] : "")
-    }
+    // MARK: - 폴링
 
     func startPolling() {
         fetchUsage()
@@ -109,65 +136,81 @@ final class UsageService: ObservableObject {
     }
 
     func fetchUsage() {
-        fetchClaudeUsage()
+        fetchOrcaSnapshot()
+        fetchCookieUsage()
         fetchCodexUsage()
     }
 
-    private func fetchClaudeUsage() {
-        guard isConfigured else {
-            usage = nil
-            error = nil
-            isClaudeLoading = false
-            return
-        }
-        guard !isClaudeLoading else { return }
+    // MARK: - Orca
 
-        isClaudeLoading = true
-        error = nil
-
-        let urlString = "https://claude.ai/api/organizations/\(organizationId)/usage"
-        guard let url = URL(string: urlString) else {
-            error = "잘못된 URL"
-            isClaudeLoading = false
+    private func fetchOrcaSnapshot() {
+        guard !isOrcaLoading else { return }
+        guard let executableURL = OrcaAccountsClient.executableURL() else {
+            orcaSnapshot = nil
+            orcaStatus = .notInstalled
             return
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue(sessionCookie, forHTTPHeaderField: "Cookie")
-        request.setValue("*/*", forHTTPHeaderField: "Accept")
-        request.setValue("https://claude.ai", forHTTPHeaderField: "Origin")
-        request.setValue("https://claude.ai", forHTTPHeaderField: "Referer")
-        request.setValue(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)",
-            forHTTPHeaderField: "User-Agent"
-        )
-
+        isOrcaLoading = true
         Task {
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    self.error = "응답 오류"
-                    self.isClaudeLoading = false
-                    return
-                }
-
-                guard httpResponse.statusCode == 200 else {
-                    self.error = "HTTP \(httpResponse.statusCode) - 쿠키가 만료되었을 수 있습니다"
-                    self.isClaudeLoading = false
-                    return
-                }
-
-                let decoded = try JSONDecoder().decode(UsageData.self, from: data)
-                self.usage = decoded
-                self.isClaudeLoading = false
+                orcaSnapshot = try await OrcaAccountsClient.fetchSnapshot(using: executableURL)
+                orcaStatus = .ok
+            } catch is CancellationError {
+                // 다음 갱신이나 앱 종료가 이 호출을 취소할 수 있다.
             } catch {
-                self.error = error.localizedDescription
-                self.isClaudeLoading = false
+                // 스냅샷을 버리지 않는다. Orca를 닫아도 마지막으로 본 값은 남는다.
+                orcaStatus = .unavailable(error.localizedDescription)
             }
+            isOrcaLoading = false
         }
     }
+
+    // MARK: - Claude 쿠키
+
+    private func fetchCookieUsage() {
+        for credential in credentials {
+            fetchCookieUsage(for: credential)
+        }
+    }
+
+    private func fetchCookieUsage(for credential: ClaudeCredential) {
+        let orgId = credential.orgId
+        var state = cookieStates[orgId] ?? AccountRegistry.CookieState()
+        guard !state.isLoading else { return }
+
+        state.isLoading = true
+        state.error = nil
+        cookieStates[orgId] = state
+
+        Task {
+            var usage: UsageData?
+            var failure: String?
+            do {
+                usage = try await ClaudeUsageClient.fetchUsage(
+                    cookie: credential.cookie,
+                    organizationId: orgId
+                )
+            } catch is CancellationError {
+                // 무시: 다음 폴링이 다시 시도한다.
+            } catch {
+                failure = error.localizedDescription
+            }
+
+            // 기다리는 동안 쿠키가 바뀌었을 수 있으니 최신 상태 위에 결과를 얹는다.
+            var next = cookieStates[orgId] ?? AccountRegistry.CookieState()
+            if let usage {
+                next.usage = usage
+                next.fetchedAt = .now
+                next.error = nil
+            }
+            next.error = failure ?? next.error
+            next.isLoading = false
+            cookieStates[orgId] = next
+        }
+    }
+
+    // MARK: - Codex
 
     private func fetchCodexUsage() {
         guard !isCodexLoading else { return }
@@ -186,6 +229,7 @@ final class UsageService: ObservableObject {
         Task {
             do {
                 codexUsage = try await CodexUsageClient.fetchUsage(using: executableURL)
+                codexFetchedAt = .now
             } catch is CancellationError {
                 // A later refresh or app shutdown can cancel this request.
             } catch {
@@ -196,35 +240,92 @@ final class UsageService: ObservableObject {
         }
     }
 
-    func fetchOrganizationId() async -> String? {
-        guard !sessionCookie.isEmpty else { return nil }
+    // MARK: - 자격증명 편집
 
-        // 쿠키에서 lastActiveOrg 추출 시도
-        let parts = sessionCookie.components(separatedBy: ";")
-        for part in parts {
-            let trimmed = part.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("lastActiveOrg=") {
-                let orgId = trimmed.replacingOccurrences(of: "lastActiveOrg=", with: "")
-                if !orgId.isEmpty { return orgId }
-            }
+    /// 쿠키를 저장한다. `expectedOrgId`를 주면 그 계정의 쿠키인지 확인하고,
+    /// 다른 계정의 것이면 저장하지 않고 알려준다.
+    func saveCookie(_ cookie: String, expectedOrgId: String? = nil) async -> CookieSaveOutcome {
+        let trimmed = cookie.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let identity = await ClaudeUsageClient.resolveIdentity(cookie: trimmed) else {
+            return .unresolved
         }
 
-        // Bootstrap API fallback
-        guard let url = URL(string: "https://claude.ai/api/bootstrap") else { return nil }
+        if let expectedOrgId, expectedOrgId != identity.orgId {
+            return .mismatch(resolved: identity.orgId, resolvedLabel: identity.email)
+        }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue(sessionCookie, forHTTPHeaderField: "Cookie")
+        store(cookie: trimmed, identity: identity)
+        return .saved(orgId: identity.orgId)
+    }
 
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let account = json["account"] as? [String: Any],
-               let orgId = account["lastActiveOrgId"] as? String {
-                return orgId
-            }
-        } catch {}
+    /// 불일치 경고를 본 뒤 사용자가 실제 계정에 붙이기로 한 경우.
+    func saveCookieIgnoringMismatch(_ cookie: String) async -> CookieSaveOutcome {
+        await saveCookie(cookie)
+    }
 
-        return nil
+    private func store(cookie: String, identity: ClaudeIdentity) {
+        let credential = ClaudeCredential(orgId: identity.orgId, cookie: cookie, label: identity.email)
+        if let index = credentials.firstIndex(where: { $0.orgId == identity.orgId }) {
+            credentials[index] = credential
+        } else {
+            credentials.append(credential)
+        }
+        CredentialsStore.save(credentials)
+        cookieStates[identity.orgId] = AccountRegistry.CookieState()
+        fetchCookieUsage(for: credential)
+    }
+
+    func removeCredential(orgId: String) {
+        credentials.removeAll { $0.orgId == orgId }
+        cookieStates[orgId] = nil
+        CredentialsStore.save(credentials)
+    }
+
+    func credential(forOrgId orgId: String) -> ClaudeCredential? {
+        credentials.first { $0.orgId == orgId }
+    }
+
+    func setMenuBarVisibility(_ isVisible: Bool, for key: AccountKey) {
+        if isVisible {
+            hiddenMenuBarAccounts.remove(key.storageID)
+        } else {
+            hiddenMenuBarAccounts.insert(key.storageID)
+        }
+    }
+
+    func isVisibleInMenuBar(_ key: AccountKey) -> Bool {
+        !hiddenMenuBarAccounts.contains(key.storageID)
+    }
+
+    private static func persistHidden(_ keys: Set<String>) {
+        UserDefaults.standard.set(Array(keys), forKey: hiddenAccountsKey)
     }
 }
+
+#if DEBUG
+extension UsageService {
+    /// 프리뷰·렌더 테스트용 시드. private(set) 프로퍼티는 같은 파일에서만
+    /// 설정할 수 있어 이 확장이 여기 있어야 한다.
+    static func seeded(
+        orca: OrcaSnapshot? = nil,
+        orcaStatus: OrcaStatus = .ok,
+        credentials: [ClaudeCredential] = [],
+        cookieStates: [String: AccountRegistry.CookieState] = [:],
+        codexUsage: CodexUsageData? = nil,
+        codexError: String? = nil,
+        isCodexInstalled: Bool = false
+    ) -> UsageService {
+        let service = UsageService(loadsStoredCredentials: false)
+        service.orcaSnapshot = orca
+        service.orcaStatus = orcaStatus
+        service.credentials = credentials
+        service.cookieStates = cookieStates
+        service.codexUsage = codexUsage
+        service.codexError = codexError
+        service.codexFetchedAt = codexUsage == nil ? nil : .now
+        service.isCodexInstalled = isCodexInstalled
+        service.hasCheckedCodex = true
+        return service
+    }
+}
+#endif

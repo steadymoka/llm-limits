@@ -4,20 +4,20 @@ struct CodexUsageData: Decodable, Equatable {
     let rateLimits: CodexRateLimitSnapshot
     let rateLimitsByLimitId: [String: CodexRateLimitSnapshot]?
 
-    var displayLimits: [CodexDisplayLimit] {
+    var displayLimits: [UsageRow] {
         snapshots.flatMap { entry in
             let windows = [entry.snapshot.primary, entry.snapshot.secondary]
                 .enumerated()
-                .compactMap { index, window -> CodexDisplayLimit? in
+                .compactMap { index, window -> UsageRow? in
                     guard let window else { return nil }
                     let windowName = window.displayName ?? (index == 0 ? "기본 한도" : "보조 한도")
                     let title = entry.name.map { "\($0) · \(windowName)" } ?? windowName
 
-                    return CodexDisplayLimit(
+                    return UsageRow(
                         id: "\(entry.id)-\(index)",
                         title: title,
                         metric: window.asUsageMetric,
-                        windowDurationMinutes: window.windowDurationMins
+                        windowMinutes: window.windowDurationMins.map(Int.init)
                     )
                 }
             return windows
@@ -27,7 +27,7 @@ struct CodexUsageData: Decodable, Equatable {
     var representativeUtilization: Double? {
         let limits = displayLimits
         let shortTerm = limits
-            .filter { ($0.windowDurationMinutes ?? .max) <= 300 }
+            .filter { ($0.windowMinutes ?? .max) <= 300 }
             .map(\.metric.utilization)
             .max()
         return shortTerm ?? limits.map(\.metric.utilization).max()
@@ -90,10 +90,8 @@ struct CodexRateLimitWindow: Decodable, Equatable {
     }
 
     var asUsageMetric: UsageMetric {
-        let resetString = resetsAt.map { timestamp in
-            ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: TimeInterval(timestamp)))
-        }
-        return UsageMetric(utilization: Double(usedPercent), resetsAt: resetString)
+        // Codex app-server의 resetsAt은 초 단위 epoch이다.
+        UsageMetric(utilization: Double(usedPercent), resetsAt: UsageMetric.fromUnixSeconds(resetsAt))
     }
 }
 
@@ -101,11 +99,4 @@ struct CodexCreditsSnapshot: Decodable, Equatable {
     let balance: String?
     let hasCredits: Bool
     let unlimited: Bool
-}
-
-struct CodexDisplayLimit: Identifiable, Equatable {
-    let id: String
-    let title: String
-    let metric: UsageMetric
-    let windowDurationMinutes: Int64?
 }

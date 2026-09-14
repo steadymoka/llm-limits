@@ -103,7 +103,7 @@ enum CodexUsageClient {
             throw CodexUsageClientError.launchFailed
         }
 
-        let processController = CodexProcessController(
+        let processController = ManagedProcess(
             process: process,
             input: inputPipe.fileHandleForWriting
         )
@@ -160,29 +160,5 @@ enum CodexUsageClient {
         }
 
         throw CodexUsageClientError.unavailable
-    }
-}
-
-private final class CodexProcessController: @unchecked Sendable {
-    private let process: Process
-    private let input: FileHandle
-    private let lock = NSLock()
-    private var hasStopped = false
-
-    init(process: Process, input: FileHandle) {
-        self.process = process
-        self.input = input
-    }
-
-    func stop() {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !hasStopped else { return }
-        hasStopped = true
-
-        try? input.close()
-        if process.isRunning {
-            process.terminate()
-        }
     }
 }

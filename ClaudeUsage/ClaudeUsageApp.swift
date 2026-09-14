@@ -24,10 +24,7 @@ struct MenuBarLabel: View {
     @ObservedObject var service: UsageService
 
     var body: some View {
-        let content = MenuBarContent(
-            claude: service.claudeMenuBarUtilization,
-            codex: service.codexMenuBarUtilization
-        )
+        let content = MenuBarContent(entries: service.menuBarEntries)
         Group {
             if let image = content.renderImage() {
                 Image(nsImage: image)
@@ -41,17 +38,54 @@ struct MenuBarLabel: View {
     }
 }
 
+struct MenuBarAccount: Equatable {
+    let label: String
+    let percent: Int
+}
+
+/// 한 제공자의 메뉴바 표시분. 활성 계정이 항상 맨 앞이고,
+/// 계정이 많아도 메뉴바가 무한정 넓어지지 않게 인라인 개수를 제한한다.
+struct MenuBarEntry: Equatable {
+    static let inlineLimit = 3
+
+    let provider: UsageProvider
+    let accounts: [MenuBarAccount]
+    let overflow: Int
+
+    init(provider: UsageProvider, accounts: [MenuBarAccount], overflow: Int = 0) {
+        self.provider = provider
+        self.accounts = accounts
+        self.overflow = overflow
+    }
+
+    var providerName: String {
+        switch provider {
+        case .claude: return "Claude"
+        case .codex: return "Codex"
+        }
+    }
+}
+
 // MenuBarExtra bridges its label to an NSStatusItem, not a normal SwiftUI
 // layout. Flatten the whole label so every provider survives that bridge.
 struct MenuBarContent: View {
-    let claude: Double?
-    let codex: Double?
+    let entries: [MenuBarEntry]
 
     var accessibilityText: String {
-        let labels = [claude.map { "Claude \(Int($0.rounded()))%" },
-         codex.map { "Codex \(Int($0.rounded()))%" }]
-            .compactMap { $0 }.joined(separator: " / ")
-        return labels.isEmpty ? "LLM Limits" : labels
+        let labels = entries.map { entry -> String in
+            // 계정이 하나면 이름을 덧붙이지 않는다. 여러 개일 때만 누가 누군지 밝힌다.
+            let body: String
+            if entry.accounts.count == 1 {
+                body = "\(entry.accounts[0].percent)%"
+            } else {
+                body = entry.accounts
+                    .map { "\($0.label) \($0.percent)%" }
+                    .joined(separator: " · ")
+            }
+            let overflow = entry.overflow > 0 ? " 외 \(entry.overflow)개" : ""
+            return "\(entry.providerName) \(body)\(overflow)"
+        }
+        return labels.isEmpty ? "LLM Limits" : labels.joined(separator: " / ")
     }
 
     @MainActor
@@ -65,16 +99,13 @@ struct MenuBarContent: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            if let claude {
-                indicator(.claude, utilization: claude)
+            ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
+                if index > 0 {
+                    Text("/")
+                }
+                indicator(for: entry)
             }
-            if claude != nil && codex != nil {
-                Text("/")
-            }
-            if let codex {
-                indicator(.codex, utilization: codex)
-            }
-            if claude == nil && codex == nil {
+            if entries.isEmpty {
                 Image(systemName: "terminal.fill")
             }
         }
@@ -84,14 +115,26 @@ struct MenuBarContent: View {
         .fixedSize()
     }
 
-    private func indicator(_ provider: UsageProvider, utilization: Double) -> some View {
+    private func indicator(for entry: MenuBarEntry) -> some View {
         HStack(spacing: 3) {
-            if provider == .claude {
-                ProviderMark(provider: provider)
+            if entry.provider == .claude {
+                ProviderMark(provider: entry.provider)
             } else {
                 Text(">_").font(.system(size: 10, weight: .heavy, design: .monospaced))
             }
-            Text("\(Int(utilization.rounded()))%")
+
+            ForEach(Array(entry.accounts.enumerated()), id: \.offset) { index, account in
+                if index > 0 {
+                    Text("·").opacity(0.5)
+                }
+                Text("\(account.percent)%")
+            }
+
+            if entry.overflow > 0 {
+                Text("+\(entry.overflow)")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .opacity(0.7)
+            }
         }
     }
 }
