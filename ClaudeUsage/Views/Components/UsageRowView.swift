@@ -15,8 +15,8 @@ struct UsageRowView: View {
     private static let resetColumn: CGFloat = 56
     private static let height: CGFloat = 20
     private static let radius: CGFloat = 5
-    private static let markerWidth: CGFloat = 1.5
-    private static let markerHeight: CGFloat = 5
+    private static let markerWidth: CGFloat = 2
+    private static let markerHeight: CGFloat = 7
 
     private var utilization: Double {
         min(max(row.metric.utilization, 0), 100)
@@ -98,13 +98,20 @@ struct UsageRowView: View {
                     // 깔면 행의 아래 테두리가 끊긴 것처럼 보여 컨테이너가 깨진다.
                     // 눈금은 글자 밑 바닥에만 짧게 둬서 리셋 날짜를 가로지르지 않는다.
                     // 눈금이 채움보다 왼쪽에 있으면 시간보다 사용량이 앞선 것이다.
+                    // 눈금만으로는 눈에 잘 안 띄어, 위로 옅은 실선을 이어 붙인다.
+                    // 실선은 글자 뒤에서 희미하게만 보이고, 진한 눈금이 위치를 찍는다.
+                    let x = markerOffset(in: geo.size.width, progress: windowProgress)
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.12))
+                        .frame(width: 1)
+                        .offset(x: x + (Self.markerWidth - 1) / 2)
                     UnevenRoundedRectangle(
                         topLeadingRadius: Self.markerWidth / 2,
                         topTrailingRadius: Self.markerWidth / 2
                     )
-                    .fill(Color.primary.opacity(0.38))
+                    .fill(Color.primary.opacity(0.6))
                     .frame(width: Self.markerWidth, height: Self.markerHeight)
-                    .offset(x: markerOffset(in: geo.size.width, progress: windowProgress))
+                    .offset(x: x)
                 }
             }
         }
