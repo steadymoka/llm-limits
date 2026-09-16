@@ -20,6 +20,42 @@ struct UsageRow: Identifiable, Equatable {
         var seen = Set<String>()
         return rows.filter { seen.insert($0.id).inserted }
     }
+
+    /// 메뉴바 막대의 몇 번째 줄인지. Claude는 행 id가 정해져 있고,
+    /// Codex는 한도마다 id가 달라 창 길이로 판단한다.
+    var menuBarWindow: MenuBarWindow? {
+        switch id {
+        case UsageRowID.fiveHour: return .session
+        case UsageRowID.sevenDay: return .weekly
+        default: break
+        }
+        if id.hasPrefix(UsageRowID.weeklyModelPrefix) { return .modelWeekly }
+
+        switch windowMinutes {
+        case 300: return .session
+        case 10_080: return .weekly
+        default: return nil
+        }
+    }
+
+    /// 좁은 자리에서 이 한도를 부르는 이름. 모델별 주간은 모델 이름이 핵심이다.
+    var menuBarName: String {
+        switch menuBarWindow {
+        case .session: return "5시간"
+        case .weekly: return "주간"
+        case .modelWeekly: return title.components(separatedBy: " · ").last ?? title
+        case nil: return title
+        }
+    }
+}
+
+/// 메뉴바 막대 한 줄. 줄 위치의 뜻은 Claude와 Codex에서 같아야 한다.
+/// 그래야 같은 높이의 막대를 두 제공자에서 같은 의미로 읽을 수 있다.
+enum MenuBarWindow: Int, CaseIterable {
+    case session
+    case weekly
+    /// 모델별 주간(Fable·Sonnet·Claude Design). Codex에는 없다.
+    case modelWeekly
 }
 
 enum UsageRowID {
@@ -27,10 +63,11 @@ enum UsageRowID {
     static let sevenDay = "seven_day"
     static let weeklyDesign = "weekly:claude_design"
     static let monthly = "monthly"
+    static let weeklyModelPrefix = "weekly:"
 
     /// 쿠키의 `limits[weekly_scoped]`와 Orca의 `fableWeekly`가
     /// 같은 한도를 가리키므로 id를 모델명으로 통일한다.
     static func weeklyModel(_ displayName: String) -> String {
-        "weekly:\(displayName.lowercased())"
+        "\(weeklyModelPrefix)\(displayName.lowercased())"
     }
 }

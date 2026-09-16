@@ -53,6 +53,28 @@ struct AccountKey: Hashable {
     }
 }
 
+/// 메뉴바 막대 한 줄분. 채움 비율과, 툴팁에서 부를 이름을 함께 들고 있다.
+struct MenuBarBar: Equatable {
+    let window: MenuBarWindow
+    let name: String
+    let percent: Int
+
+    init(window: MenuBarWindow, name: String, percent: Int) {
+        self.window = window
+        self.name = name
+        self.percent = percent
+    }
+
+    init(window: MenuBarWindow, row: UsageRow) {
+        self.init(window: window, name: row.menuBarName, percent: Int(row.metric.utilization.rounded()))
+    }
+
+    /// 막대가 채워지는 비율. 100%를 넘겨 들어와도 막대를 넘치게 그리지 않는다.
+    var fill: Double {
+        min(1, max(0, Double(percent) / 100))
+    }
+}
+
 /// 팝오버·메뉴바가 그대로 그리는 표시 모델.
 struct AccountCard: Identifiable, Equatable {
     let key: AccountKey
@@ -108,6 +130,27 @@ struct AccountCard: Identifiable, Equatable {
 
     var maxUtilization: Double {
         menuBarUtilization ?? 0
+    }
+
+    /// 메뉴바 막대. 줄마다 그 창에서 가장 먼저 벽에 닿는 한도를 고른다.
+    /// 모델별 주간은 Fable·Sonnet·Claude Design이 함께 올 수 있는데,
+    /// 한 줄뿐이므로 가장 높은 하나만 남긴다. 그러지 않으면 96%짜리 한도가
+    /// 메뉴바에서 조용히 사라진다.
+    var menuBarBars: [MenuBarBar] {
+        let bars = MenuBarWindow.allCases.compactMap { window -> MenuBarBar? in
+            let binding = rows
+                .filter { $0.menuBarWindow == window }
+                .max { $0.metric.utilization < $1.metric.utilization }
+            guard let binding else { return nil }
+            return MenuBarBar(window: window, row: binding)
+        }
+        guard bars.isEmpty else { return bars }
+
+        // 5시간도 주간도 아닌 한도(월간 등)만 가진 계정도 메뉴바에서 사라지면 안 된다.
+        guard let fallback = rows.max(by: { $0.metric.utilization < $1.metric.utilization }) else {
+            return []
+        }
+        return [MenuBarBar(window: .weekly, row: fallback)]
     }
 
     /// 소스와 그 데이터가 몇 분 전 것인지. Orca 스냅샷은 캐시라 나이를 숨기지 않는다.

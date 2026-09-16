@@ -105,8 +105,9 @@ final class UsageService: ObservableObject {
         let accounts = cards
             .filter { !hiddenMenuBarAccounts.contains($0.key.storageID) }
             .compactMap { card -> MenuBarAccount? in
-                guard let utilization = card.menuBarUtilization else { return nil }
-                return MenuBarAccount(label: card.shortLabel, percent: Int(utilization.rounded()))
+                let bars = card.menuBarBars
+                guard !bars.isEmpty else { return nil }
+                return MenuBarAccount(label: card.shortLabel, bars: bars)
             }
         guard !accounts.isEmpty else { return nil }
 

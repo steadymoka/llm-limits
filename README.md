@@ -7,11 +7,11 @@ Built with SwiftUI, with a minimal, developer-friendly interface.
 
 ## Features
 
-- **Every account, one menu bar** — Separate Claude / Codex percentages with provider icons, one number per account with the active account first. Only providers with available usage data appear.
+- **Every account, one menu bar** — Each account is three stacked bars: session, weekly, and the model-scoped weekly limit, top to bottom. A row means the same window for both providers, so an empty row is a limit that provider does not have. Accounts are grouped by provider icon, active account first, and hovering names every number. Only providers with available usage data appear.
 - **Multiple Claude accounts** — Accounts managed by Orca are discovered automatically, including the ones you are not currently signed in to, so you can see which account still has headroom before switching.
 - **Honest freshness** — Each account shows where its numbers came from and how old they are (`LIVE` for a direct fetch, `ORCA 8m` for Orca's cached snapshot).
 - **Detailed limits** — Claude session, weekly, and model-specific limits alongside the default Codex limits. Extra Codex model buckets, such as Spark, stay hidden.
-- **Reset countdowns** — See the reset date and time, plus how long is left.
+- **Reset countdowns** — See the reset date and time, plus how long is left. A thin bar along the bottom of each row fills as its window elapses, so usage running ahead of the clock shows up as a usage bar longer than the time bar.
 - **Automatic Codex detection** — Uses the installed, signed-in Codex CLI without copying tokens into the app.
 - **Automatic refresh** — Updates every 5 minutes, with manual refresh in the popover.
 

@@ -294,11 +294,14 @@ private struct CodexMark: View {
         ZStack {
             RoundedRectangle(cornerRadius: 3)
                 .fill(.primary)
+            // 글자를 배경색으로 칠하는 대신 칩을 뚫는다. 메뉴바 아이콘은 알파만 남는
+            // 템플릿 이미지라, 불투명한 글자를 얹으면 칩이 통째로 검은 사각형이 된다.
             Text(">_")
                 .font(.system(size: 5.5, weight: .heavy, design: .monospaced))
-                .foregroundStyle(Color(nsColor: .windowBackgroundColor))
                 .offset(y: -0.2)
+                .blendMode(.destinationOut)
         }
+        .compositingGroup()
         .frame(width: 13, height: 13)
         .accessibilityLabel("Codex")
     }

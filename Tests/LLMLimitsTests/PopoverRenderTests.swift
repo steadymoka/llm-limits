@@ -166,9 +166,14 @@ final class PopoverRenderTests: XCTestCase {
             isCodexInstalled: true
         )
 
+        // 계정마다 5시간 · 주간 · 모델별 주간 순서로 막대가 선다.
         XCTAssertEqual(
-            service.menuBarEntries.map { $0.accounts.map(\.percent) },
-            [[28, 96], [53]]
+            service.menuBarEntries.map { $0.accounts.map(\.summary) },
+            [
+                ["5시간 28% · 주간 3% · Fable 4%", "5시간 1% · 주간 96% · Fable 73%"],
+                // 이 Codex 픽스처는 주간 한도만 내려준다. 5시간 줄은 빈 트랙으로 남는다.
+                ["주간 53%"],
+            ]
         )
 
         let content = MenuBarContent(entries: service.menuBarEntries)
