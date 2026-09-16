@@ -15,7 +15,8 @@ struct UsageRowView: View {
     private static let resetColumn: CGFloat = 56
     private static let height: CGFloat = 20
     private static let radius: CGFloat = 5
-    private static let windowBarHeight: CGFloat = 2
+    private static let markerWidth: CGFloat = 1.5
+    private static let markerHeight: CGFloat = 5
 
     private var utilization: Double {
         min(max(row.metric.utilization, 0), 100)
@@ -93,20 +94,29 @@ struct UsageRowView: View {
                     .frame(width: fillWidth(in: geo.size.width))
 
                 if let windowProgress {
-                    // 기간은 바닥에 얇게 깐다. 사용량 막대와 같은 굵기로 그리면
-                    // 어느 쪽이 사용량인지 헷갈린다.
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.22))
-                        .frame(
-                            width: max(geo.size.width * windowProgress, 1),
-                            height: Self.windowBarHeight
-                        )
+                    // 기간은 막대가 아니라 눈금 하나로 찍는다. 바닥에 두 번째 막대를
+                    // 깔면 행의 아래 테두리가 끊긴 것처럼 보여 컨테이너가 깨진다.
+                    // 눈금은 글자 밑 바닥에만 짧게 둬서 리셋 날짜를 가로지르지 않는다.
+                    // 눈금이 채움보다 왼쪽에 있으면 시간보다 사용량이 앞선 것이다.
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: Self.markerWidth / 2,
+                        topTrailingRadius: Self.markerWidth / 2
+                    )
+                    .fill(Color.primary.opacity(0.38))
+                    .frame(width: Self.markerWidth, height: Self.markerHeight)
+                    .offset(x: markerOffset(in: geo.size.width, progress: windowProgress))
                 }
             }
         }
         // 채움은 각진 채로 트랙에 잘려야 한다. 채움 자체를 둥글리면
         // 4%짜리 막대가 알약처럼 보여 실제보다 커 보인다.
         .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
+    }
+
+    /// 눈금은 채움과 같은 자로 잰다. 양 끝은 둥근 모서리에 걸리지 않게 안쪽으로 당긴다.
+    private func markerOffset(in width: CGFloat, progress: Double) -> CGFloat {
+        let usable = max(width - Self.radius * 2 - Self.markerWidth, 0)
+        return Self.radius + usable * progress
     }
 
     private func fillWidth(in width: CGFloat) -> CGFloat {
