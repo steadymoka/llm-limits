@@ -28,6 +28,7 @@ struct UsagePopoverView: View {
                 .padding(.vertical, 6)
         }
         .frame(width: 284)
+        .fitsMenuBarWindow()
     }
 
     private var header: some View {
@@ -258,6 +259,52 @@ struct UsagePopoverView: View {
             openWindow(id: "settings")
         }
         NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+/// MenuBarExtra(.window) 패널은 내용이 커지면 창도 따라 커지지만, 줄어들 때는
+/// 커진 높이 그대로 남는다. 남은 높이는 아무도 칠하지 않아 투명하게 비고,
+/// 둥근 창 안에 각진 내용 상자가 뜬 것처럼 보인다. 한도 줄 하나가 사라지거나
+/// 오류·로딩 줄이 걷히기만 해도 바로 이 상태가 되므로, 한 번 겪으면 앱을
+/// 다시 띄울 때까지 계속 그 모양이다.
+///
+/// 그래서 내용 높이가 바뀔 때마다 창을 그 높이로 다시 재운다. 메뉴바에 매달린
+/// 패널이라 위 모서리는 붙잡아 두고 아래로만 줄이고 늘린다.
+///
+/// 창은 NSViewRepresentable로 집어오지 않는다. 이 팝오버는 테스트에서
+/// ImageRenderer로도 그려지는데, 거기서 AppKit 뷰는 커다란 금지 표시로 대신
+/// 그려져 화면 전체를 덮는다. 레벨로 골라내면 그릴 것이 없는 Color.clear로 끝난다.
+private func fitMenuBarWindow(to height: CGFloat) {
+    // 레이아웃 도중에 창 크기를 건드리면 그 패스가 어긋난다. 한 박자 쉬고 맞춘다.
+    DispatchQueue.main.async {
+        // 설정 창처럼 평범한 창이 딸려 들어오면 안 된다. 메뉴바 패널만 고른다.
+        // isVisible로 더 좁히면 안 된다. 패널이 다시 뜨는 동안에는 그 값이 false라,
+        // 정작 크기를 고쳐야 할 순간마다 건너뛴다.
+        guard height > 0,
+              let window = NSApp.windows.first(where: { $0.level == .popUpMenu })
+        else { return }
+
+        let current = window.frame.height
+        guard abs(current - height) > 0.5 else { return }
+
+        var frame = window.frame
+        frame.origin.y += current - height
+        frame.size.height = height
+        window.setFrame(frame, display: true)
+    }
+}
+
+private extension View {
+    /// 내용 높이에 맞춰 메뉴바 패널 창을 다시 재운다.
+    func fitsMenuBarWindow() -> some View {
+        background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onChange(of: proxy.size.height, initial: true) { _, height in
+                        fitMenuBarWindow(to: height)
+                    }
+            }
+        )
     }
 }
 
